@@ -13,38 +13,26 @@ namespace LoanApproval.Application.Services;
 /// none is newed-up here, which is what makes this class trivial to unit
 /// test with mocks for all four collaborators.
 /// </summary>
-public class LoanApplicationService : ILoanApplicationService
+public class LoanApplicationService(
+    ILoanRepository repository,
+    IEligibilityService eligibilityService,
+    IFundingGateway fundingGateway,
+    IAuditLogger auditLogger)
+    : ILoanApplicationService
 {
-    private readonly ILoanRepository _repository;
-    private readonly IEligibilityService _eligibilityService;
-    private readonly IFundingGateway _fundingGateway;
-    private readonly IAuditLogger _auditLogger;
-
-    public LoanApplicationService(
-        ILoanRepository repository,
-        IEligibilityService eligibilityService,
-        IFundingGateway fundingGateway,
-        IAuditLogger auditLogger)
-    {
-        _repository = repository;
-        _eligibilityService = eligibilityService;
-        _fundingGateway = fundingGateway;
-        _auditLogger = auditLogger;
-    }
-
     public async Task<LoanDecisionResponse> SubmitAsync(LoanApplicationRequest request)
     {
-        var applicant = await _repository.GetApplicantByMemberNumberAsync(request.MemberNumber)
+        var applicant = await repository.GetApplicantByMemberNumberAsync(request.MemberNumber)
             ?? throw new KeyNotFoundException($"No applicant found for member number '{request.MemberNumber}'.");
 
-        var loanApplication = await _repository.CreateLoanApplicationAsync(new LoanApplication
+        var loanApplication = await repository.CreateLoanApplicationAsync(new LoanApplication
         {
             ApplicantId = applicant.Id,
             RequestedAmount = request.RequestedAmount
         });
 
         var stopwatch = Stopwatch.StartNew();
-        var (outcome, reasoning) = _eligibilityService.Evaluate(applicant, request.RequestedAmount);
+        var (outcome, reasoning) = eligibilityService.Evaluate(applicant, request.RequestedAmount);
         stopwatch.Stop();
 
         var decision = new Decision
@@ -55,17 +43,17 @@ public class LoanApplicationService : ILoanApplicationService
             EvaluationDurationMs = stopwatch.ElapsedMilliseconds
         };
 
-        await _repository.SaveDecisionAsync(decision);
-        _auditLogger.LogDecision(decision, request.MemberNumber);
+        await repository.SaveDecisionAsync(decision);
+        auditLogger.LogDecision(decision, request.MemberNumber);
 
         DateTime? fundedAt = null;
         if (outcome == DecisionType.Approved)
         {
-            var funded = await _fundingGateway.FundAsync(loanApplication.Id, request.RequestedAmount);
+            var funded = await fundingGateway.FundAsync(loanApplication.Id, request.RequestedAmount);
             if (funded)
             {
                 fundedAt = DateTime.UtcNow;
-                await _repository.MarkFundedAsync(loanApplication.Id, fundedAt.Value);
+                await repository.MarkFundedAsync(loanApplication.Id, fundedAt.Value);
             }
         }
 

@@ -13,46 +13,39 @@ namespace LoanApproval.Infrastructure.Repositories;
 /// contexts within the same request. This is a good live example to walk
 /// through if asked to explain DI lifetimes.
 /// </summary>
-public class LoanRepository : ILoanRepository
+public class LoanRepository(LoanDbContext context) : ILoanRepository
 {
-    private readonly LoanDbContext _context;
-
-    public LoanRepository(LoanDbContext context)
-    {
-        _context = context;
-    }
-
     public async Task<Applicant?> GetApplicantByMemberNumberAsync(string memberNumber)
     {
-        return await _context.Applicants
+        return await context.Applicants
             .FirstOrDefaultAsync(a => a.MemberNumber == memberNumber);
     }
 
     public async Task<LoanApplication> CreateLoanApplicationAsync(LoanApplication application)
     {
-        _context.LoanApplications.Add(application);
-        await _context.SaveChangesAsync();
+        context.LoanApplications.Add(application);
+        await context.SaveChangesAsync();
         return application;
     }
 
     public async Task SaveDecisionAsync(Decision decision)
     {
-        _context.Decisions.Add(decision);
-        await _context.SaveChangesAsync();
+        context.Decisions.Add(decision);
+        await context.SaveChangesAsync();
     }
 
     public async Task MarkFundedAsync(int loanApplicationId, DateTime fundedAtUtc)
     {
-        var application = await _context.LoanApplications.FindAsync(loanApplicationId);
+        var application = await context.LoanApplications.FindAsync(loanApplicationId);
         if (application is null) return;
 
         application.FundedAtUtc = fundedAtUtc;
-        await _context.SaveChangesAsync();
+        await context.SaveChangesAsync();
     }
 
     public async Task<LoanApplication?> GetLoanApplicationAsync(int id)
     {
-        return await _context.LoanApplications
+        return await context.LoanApplications
             .Include(l => l.Decision)
             .Include(l => l.Applicant)
             .FirstOrDefaultAsync(l => l.Id == id);
@@ -60,7 +53,7 @@ public class LoanRepository : ILoanRepository
 
     public async Task<(int TotalApplications, int Approved, double AvgEvaluationMs)> GetApplicantTrendAsync(int applicantId)
     {
-        var query = _context.LoanApplications
+        var query = context.LoanApplications
             .Where(l => l.ApplicantId == applicantId)
             .Include(l => l.Decision)
             .Where(l => l.Decision != null);

@@ -4,18 +4,11 @@ using Microsoft.Extensions.Logging;
 
 namespace LoanApproval.Infrastructure.Services;
 
-public class AuditLogger : IAuditLogger
+public class AuditLogger(ILogger<AuditLogger> logger) : IAuditLogger
 {
-    private readonly ILogger<AuditLogger> _logger;
-
-    public AuditLogger(ILogger<AuditLogger> logger)
-    {
-        _logger = logger;
-    }
-
     public void LogDecision(Decision decision, string memberNumber)
     {
-        _logger.LogInformation(
+        logger.LogInformation(
             "Decision {Outcome} for member {MemberNumber} on application {LoanApplicationId} at {EvaluatedAtUtc}. Reasoning: {Reasoning}",
             decision.Outcome,
             memberNumber,

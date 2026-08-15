@@ -3,10 +3,8 @@ using Microsoft.EntityFrameworkCore;
 
 namespace LoanApproval.Infrastructure.Data;
 
-public class LoanDbContext : DbContext
+public class LoanDbContext(DbContextOptions<LoanDbContext> options) : DbContext(options)
 {
-    public LoanDbContext(DbContextOptions<LoanDbContext> options) : base(options) { }
-
     public DbSet<Applicant> Applicants => Set<Applicant>();
     public DbSet<LoanApplication> LoanApplications => Set<LoanApplication>();
     public DbSet<Decision> Decisions => Set<Decision>();

@@ -6,15 +6,8 @@ namespace LoanApproval.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-public class LoanApplicationsController : ControllerBase
+public class LoanApplicationsController(ILoanApplicationService loanApplicationService) : ControllerBase
 {
-    private readonly ILoanApplicationService _loanApplicationService;
-
-    public LoanApplicationsController(ILoanApplicationService loanApplicationService)
-    {
-        _loanApplicationService = loanApplicationService;
-    }
-
     /// <summary>
     /// Submits a new small-dollar loan application for evaluation and,
     /// if approved, initiates funding - mirroring a Q-Cash style
@@ -27,7 +20,7 @@ public class LoanApplicationsController : ControllerBase
     {
         try
         {
-            var response = await _loanApplicationService.SubmitAsync(request);
+            var response = await loanApplicationService.SubmitAsync(request);
             return Ok(response);
         }
         catch (KeyNotFoundException ex)
