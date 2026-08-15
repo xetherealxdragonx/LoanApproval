@@ -1,4 +1,5 @@
-import { BrowserRouter, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, Link, Route, Routes } from 'react-router-dom'
+import { Logo } from './components/Logo'
 import { MemberDetail } from './pages/MemberDetail'
 import { MemberList } from './pages/MemberList'
 
@@ -7,8 +8,12 @@ export default function App() {
     <BrowserRouter>
       <div className="shell">
         <nav className="app-nav">
-          <span className="brand">Loan Approval</span>
-          <span className="brand-sub">Member browser</span>
+          {/* The logo doubles as the route home, which is the convention users
+              expect from a masthead. */}
+          <Link to="/" className="logo-link" aria-label="Alloya home">
+            <Logo />
+          </Link>
+          <span className="brand-sub">Loan approval · member browser</span>
         </nav>
         <main>
           <Routes>

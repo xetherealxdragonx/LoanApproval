@@ -114,6 +114,25 @@ npm install
 npm run dev      # http://localhost:5173
 ```
 
+#### Branding
+
+Both brand assets are the supplied artwork, used as-is rather than reproduced:
+
+| File | Used for | Source size |
+|------|----------|-------------|
+| `web/public/alloya-fcu-logo.jpg` | Header lockup (`Logo.tsx`), rendered 56px tall | 400×171 |
+| `web/public/alloya-icon.jpg`     | Favicon and apple-touch-icon                  | 200×200 |
+
+Both are comfortably above the resolution they render at, including on 2x
+displays, so neither is redrawn as SVG.
+
+Because they are JPEGs they have no alpha and carry a solid white matte, which
+would show as a pale rectangle against the page's `#f6f7f9` background. The
+header image uses `mix-blend-mode: multiply`, which blends white to the backdrop
+exactly while leaving the artwork's own colours effectively unchanged. That works
+only against a light background — a dark theme would need transparent PNG or SVG
+versions of both files.
+
 Run the API first — the Vite dev server proxies `/api` to
 `https://localhost:54744` (see `web/vite.config.ts`). Going through the proxy
 keeps every browser request same-origin, which is why the API needs **no CORS

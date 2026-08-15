@@ -39,21 +39,57 @@ body {
 
 .app-nav {
   display: flex;
-  align-items: baseline;
-  gap: 10px;
-  padding: 20px 0;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 18px 0;
   border-bottom: 1px solid var(--border);
   margin-bottom: 28px;
-}
-
-.brand {
-  font-weight: 650;
-  letter-spacing: -0.01em;
 }
 
 .brand-sub {
   color: var(--muted);
   font-size: 13px;
+}
+
+/* --- logo lockup ---------------------------------------------------------- */
+
+.logo-link {
+  text-decoration: none;
+  color: inherit;
+  border-radius: 6px;
+}
+
+.logo-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+
+.logo {
+  display: block;
+  /* Height drives the size; width follows the source 400x171 aspect ratio.
+     The width/height attributes on the element reserve the right box during
+     load, so the header does not shift once the image arrives. */
+  height: 56px;
+  width: auto;
+
+  /* The supplied artwork is JPEG, so it has no alpha and carries a solid white
+     matte that would otherwise show as a pale rectangle against the page's
+     #f6f7f9 background. Multiply blends white to the backdrop exactly
+     (white x bg = bg) while leaving the dark wordmark and the mark's colours
+     essentially untouched - they shift by the background's ~3.5% off-white,
+     which is imperceptible.
+
+     This holds only because the page background is light. A dark theme would
+     need a transparent PNG or SVG instead of this blend. */
+  mix-blend-mode: multiply;
+}
+
+@media (max-width: 520px) {
+  .logo {
+    height: 44px;
+  }
 }
 
 .page-header {
