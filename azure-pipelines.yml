@@ -1,7 +1,7 @@
 # Azure DevOps pipeline for LoanApproval
 #
 # CI stage runs on every push/PR: restore, build, test.
-# CD stage runs only on main: publish and deploy to an Azure Web App.
+# CD stage runs only on master: publish and deploy to an Azure Web App.
 #
 # Before running: create an Azure Web App (Linux, .NET 8) and an
 # Azure DevOps service connection named "AzureServiceConnection" that
@@ -10,12 +10,12 @@
 trigger:
   branches:
     include:
-      - main
+      - master
 
 pr:
   branches:
     include:
-      - main
+      - master
 
 variables:
   buildConfiguration: 'Release'
