@@ -19,7 +19,7 @@ pr:
 
 variables:
   buildConfiguration: 'Release'
-  webAppName: 'loan-approval-api'          # <-- update to your App Service name
+  webAppName: 'loan-approval-app'          # <-- update to your App Service name
   azureSubscription: 'AzureServiceConnection' # <-- update to your service connection name
 
 stages:
