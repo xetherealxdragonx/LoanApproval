@@ -3,7 +3,9 @@ obj/
 .vs/
 *.user
 appsettings.Development.json
-.dockerignore
 publish/
 TestResults/
 .idea/
+
+# Vite build output - generated into the API's wwwroot by `npm run build` in web/
+src/LoanApproval.Api/wwwroot/

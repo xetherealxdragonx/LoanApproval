@@ -1,7 +1,11 @@
 # Azure DevOps pipeline for LoanApproval
 #
-# CI stage runs on every push/PR: restore, build, test.
+# CI stage runs on every push/PR: restore, build, test, build the React front end.
 # CD stage runs only on master: publish and deploy to an Azure Web App.
+#
+# The front end is not deployed separately and no Node process runs in Azure.
+# Vite builds into src/LoanApproval.Api/wwwroot and the API serves those files,
+# so the whole application ships as a single Web App deployment.
 #
 # Before running: create an Azure Web App (Linux, .NET 8) and an
 # Azure DevOps service connection named "AzureServiceConnection" that
@@ -55,6 +59,28 @@ stages:
               projects: 'tests/**/*.csproj'
               arguments: '--configuration $(buildConfiguration) --no-build --collect:"XPlat Code Coverage"'
 
+          # The React app is built before `dotnet publish` so that Vite's output,
+          # which vite.config.ts writes to src/LoanApproval.Api/wwwroot, is picked
+          # up by the Web SDK and included in the published package. There is no
+          # Node process at runtime - the API serves the built assets as static files.
+          - task: NodeTool@0
+            displayName: 'Install Node 22'
+            inputs:
+              versionSpec: '22.x'
+
+          - task: Npm@1
+            displayName: 'Install front-end dependencies'
+            inputs:
+              command: 'ci'
+              workingDir: 'web'
+
+          - task: Npm@1
+            displayName: 'Build front end'
+            inputs:
+              command: 'custom'
+              customCommand: 'run build'
+              workingDir: 'web'
+
           - task: DotNetCoreCLI@2
             displayName: 'Publish API'
             inputs:
@@ -70,7 +96,7 @@ stages:
   - stage: CD
     displayName: 'Deploy to Azure'
     dependsOn: CI
-    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/master'))
     jobs:
       - deployment: DeployWebApp
         environment: 'production'

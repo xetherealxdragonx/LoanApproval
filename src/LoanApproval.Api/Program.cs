@@ -48,19 +48,37 @@ if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
-
-    // Development only: apply migrations and seed demo applicants so the API is
-    // immediately demoable against an empty database. A scope is required here
-    // because LoanDbContext is Scoped and app.Services is the root provider.
-    using var scope = app.Services.CreateScope();
-    await DbSeeder.SeedAsync(
-        scope.ServiceProvider.GetRequiredService<LoanDbContext>(),
-        scope.ServiceProvider.GetRequiredService<ILogger<Program>>());
 }
 
+// Applies pending migrations and seeds the demo applicants. This runs in every
+// environment, including the deployed Azure Web App, so a fresh deployment comes
+// up with a usable schema and demo data rather than an empty database. A scope is
+// required here because LoanDbContext is Scoped and app.Services is the root provider.
+using var scope = app.Services.CreateScope();
+await DbSeeder.SeedAsync(
+    scope.ServiceProvider.GetRequiredService<LoanDbContext>(),
+    scope.ServiceProvider.GetRequiredService<ILogger<Program>>());
+
 app.UseHttpsRedirection();
+
+// Serves the built React app from wwwroot. In a deployed build the CI pipeline
+// has already written Vite's output there; in local development wwwroot is
+// typically empty because the Vite dev server on :5173 serves the UI instead.
+app.UseStaticFiles();
+
 app.UseAuthorization();
 app.MapControllers();
+
+// An unmatched /api/... path must 404 rather than fall through to the SPA
+// fallback below, which would hand an API client the HTML shell with a 200.
+// A catch-all route is the lowest-precedence match, so real controller routes
+// still win over it.
+app.Map("/api/{**path}", () => Results.NotFound());
+
+// SPA fallback: anything else that matched neither a controller nor a static
+// file returns index.html, so a hard refresh on a client-side route such as
+// /members/M-1001 loads the app instead of 404ing.
+app.MapFallbackToFile("index.html");
 
 app.Run();
 

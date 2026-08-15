@@ -6,6 +6,15 @@ import react from '@vitejs/plugin-react'
 // request same-origin, so the API needs no CORS policy for local development.
 export default defineConfig({
   plugins: [react()],
+  build: {
+    // Build straight into the API's wwwroot. The Web SDK includes wwwroot in
+    // `dotnet publish` output automatically, so CI only has to run this build
+    // before publishing - no separate copy step, and no second thing to deploy.
+    outDir: '../src/LoanApproval.Api/wwwroot',
+    // Required because outDir sits outside this project's root; without it Vite
+    // refuses to clear the directory and stale assets accumulate across builds.
+    emptyOutDir: true,
+  },
   server: {
     port: 5173,
     proxy: {

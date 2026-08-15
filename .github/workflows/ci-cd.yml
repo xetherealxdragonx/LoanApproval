@@ -26,6 +26,25 @@ jobs:
       - name: Test
         run: dotnet test tests/LoanApproval.Tests/LoanApproval.Tests.csproj --configuration Release --no-build
 
+      # The React app is built before `dotnet publish` so Vite's output - which
+      # vite.config.ts writes to src/LoanApproval.Api/wwwroot - is included in the
+      # published package by the Web SDK. No Node process runs in Azure; the API
+      # serves the built assets as static files.
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install front-end dependencies
+        run: npm ci
+        working-directory: web
+
+      - name: Build front end
+        run: npm run build
+        working-directory: web
+
       - name: Publish
         if: github.ref == 'refs/heads/master'
         run: dotnet publish src/LoanApproval.Api/LoanApproval.Api.csproj -c Release -o ./publish

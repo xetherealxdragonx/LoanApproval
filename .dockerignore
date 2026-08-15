@@ -1,0 +1,26 @@
+# Keeps the build context small and, more importantly, keeps host build output
+# from leaking into the image. Local obj/ folders contain project.assets.json
+# with absolute Windows NuGet paths, which break `dotnet restore` inside Linux
+# containers if copied in.
+bin/
+obj/
+**/bin/
+**/obj/
+
+# Installed by `npm ci` inside the frontend stage; copying the host's copy would
+# be slow and could carry platform-specific native binaries.
+web/node_modules/
+
+# Vite output. The frontend stage regenerates this, and stage 2 copies it in
+# explicitly - a stale host copy must never win.
+src/LoanApproval.Api/wwwroot/
+web/dist/
+
+.git/
+.github/
+.idea/
+.vs/
+TestResults/
+publish/
+**/*.user
+appsettings.Development.json

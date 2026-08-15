@@ -1,4 +1,5 @@
 using LoanApproval.Domain.Entities;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -6,10 +7,7 @@ namespace LoanApproval.Infrastructure.Data;
 
 /// <summary>
 /// Demo seed data. Deliberately kept out of <see cref="LoanDbContext.OnModelCreating"/>
-/// (i.e. not EF's HasData) so that sample members are never baked into a migration
-/// and shipped to a real environment - a migration runs everywhere, including
-/// production, whereas this seeder is invoked only from the Development branch
-/// of the API's startup path.
+/// (i.e. not EF's HasData) so that sample members are never baked into a migration.
 ///
 /// Only Applicants are seeded. LoanApplications and Decisions are intentionally
 /// left empty so a demo creates them live through the real request pipeline,
@@ -17,11 +15,67 @@ namespace LoanApproval.Infrastructure.Data;
 /// </summary>
 public static class DbSeeder
 {
+    private const int DefaultMaxAttempts = 6;
+
     /// <summary>
-    /// Applies any pending migrations, then inserts the demo applicants if the
-    /// table is empty. Idempotent: safe to call on every startup.
+    /// Applies pending migrations and seeds demo applicants, retrying with
+    /// exponential backoff while the database is unreachable.
+    ///
+    /// This runs on the startup path in every environment, so a database that is
+    /// still waking up - an Azure SQL failover, or a SQL container that has not
+    /// finished starting - would otherwise take the whole application down. The
+    /// retry absorbs blips of roughly half a minute.
+    ///
+    /// If every attempt fails the exception is deliberately allowed to escape:
+    /// crashing lets App Service (or Docker, or Kubernetes) restart the process,
+    /// which is a longer, better supervised retry than anything done in-process.
+    /// Starting up regardless would leave a process that answers requests with
+    /// errors while still looking healthy to a platform health probe.
     /// </summary>
-    public static async Task SeedAsync(LoanDbContext context, ILogger logger)
+    public static async Task SeedAsync(
+        LoanDbContext context,
+        ILogger logger,
+        int maxAttempts = DefaultMaxAttempts)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                await MigrateAndSeedAsync(context, logger);
+                return;
+            }
+            catch (Exception ex) when (attempt < maxAttempts && IsConnectivityFailure(ex))
+            {
+                // 1s, 2s, 4s, 8s, 16s - about 31s of tolerance over six attempts.
+                var delay = TimeSpan.FromSeconds(Math.Pow(2, attempt - 1));
+
+                logger.LogWarning(
+                    "Database unavailable on attempt {Attempt} of {MaxAttempts} ({Reason}). Retrying in {DelaySeconds}s.",
+                    attempt, maxAttempts, ex.GetBaseException().Message, delay.TotalSeconds);
+
+                await Task.Delay(delay);
+            }
+        }
+    }
+
+    /// <summary>
+    /// True when the exception chain indicates the database could not be reached
+    /// or timed out. Note that a genuinely broken migration also surfaces as a
+    /// SqlException and will therefore be retried before failing - that costs
+    /// half a minute on a permanent fault, which is a fair trade for not having
+    /// to enumerate transient SQL error numbers.
+    /// </summary>
+    private static bool IsConnectivityFailure(Exception exception)
+    {
+        for (Exception? current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is SqlException or TimeoutException) return true;
+        }
+
+        return false;
+    }
+
+    private static async Task MigrateAndSeedAsync(LoanDbContext context, ILogger logger)
     {
         await context.Database.MigrateAsync();
 

@@ -76,6 +76,19 @@ To apply migrations without running the API:
 dotnet ef database update --project src/LoanApproval.Infrastructure --startup-project src/LoanApproval.Api
 ```
 
+### Startup resilience
+
+Migration and seeding happen on the startup path in every environment, so a
+database that is still waking up would otherwise take the whole application down.
+`DbSeeder.SeedAsync` retries connectivity failures with exponential backoff —
+six attempts over roughly 31 seconds (1s, 2s, 4s, 8s, 16s).
+
+If every attempt fails the exception is allowed to escape and the process exits.
+That is deliberate: crashing lets App Service or Docker restart the process, which
+is a longer and better supervised retry than anything done in-process. Starting up
+anyway would leave a process that answers requests with errors while still looking
+healthy to a platform health probe.
+
 The seeded members are each chosen to trip exactly one branch of the rules engine:
 
 | Member   | Profile                          | Outcome for a $400 request |
@@ -111,6 +124,30 @@ setting only.
 If you later host the front end on its own origin, the proxy no longer applies
 and the API will need a CORS policy at that point.
 
+### How the front end is deployed
+
+There is no Node process in production. `npm run build` compiles the app to
+static files, and `web/vite.config.ts` writes them directly into
+`src/LoanApproval.Api/wwwroot`. The Web SDK includes `wwwroot` in
+`dotnet publish` output, so the API and the UI ship as a single Azure Web App
+deployment on one origin — which also means CORS is never needed in production.
+
+`Program.cs` serves those files with `UseStaticFiles`, and falls back to
+`index.html` for unmatched paths so a hard refresh on a client-side route such as
+`/members/M-1001` loads the app. Unmatched `/api/...` paths are excluded from that
+fallback and still return 404, so API clients never receive the HTML shell.
+
+Both CI pipelines therefore build the front end *before* `dotnet publish`:
+
+```bash
+cd web && npm ci && npm run build     # writes to src/LoanApproval.Api/wwwroot
+dotnet publish src/LoanApproval.Api/LoanApproval.Api.csproj -c Release -o ./publish
+```
+
+To reproduce the deployed layout locally, run those two commands and then
+`dotnet run --project src/LoanApproval.Api` — the whole app is served from
+`https://localhost:54744`, with no Vite dev server involved.
+
 To reset the demo to a clean slate:
 
 ```bash
@@ -140,10 +177,41 @@ Both require an Azure Web App (Linux, .NET 8) to already exist; update the
 
 ## Containerizing
 
+The Dockerfile is a three-stage build: a `node:22-alpine` stage compiles the React
+app, the SDK stage copies those assets into `wwwroot` before `dotnet publish`, and
+the runtime stage carries only the published output. No Node process runs in the
+final image — it contains the ASP.NET runtime and static files.
+
 ```bash
 docker build -t loan-approval-api -f src/LoanApproval.Api/Dockerfile .
-docker run -p 8080:8080 loan-approval-api
 ```
+
+The container needs a reachable SQL Server: the app applies migrations and seeds
+on startup, retrying for about 31 seconds and then **exiting if the database still
+cannot be reached** (see "Startup resilience" below). `(localdb)` from
+`appsettings.json` is not reachable from inside a container, so supply a
+connection string via environment variable. The `__` separator is .NET's
+convention for nesting, so `ConnectionStrings__LoanDb` overrides the
+`ConnectionStrings:LoanDb` key — the same mechanism Azure App Service uses.
+
+```bash
+docker network create loan-net
+
+docker run -d --name loan-sql --network loan-net \
+  -e ACCEPT_EULA=Y -e MSSQL_SA_PASSWORD='Str0ng!LocalTest1' -e MSSQL_PID=Developer \
+  mcr.microsoft.com/mssql/server:2022-latest
+
+docker run -d --name loan-app --network loan-net -p 8080:8080 \
+  -e 'ConnectionStrings__LoanDb=Server=loan-sql;Database=LoanApprovalDb;User Id=sa;Password=Str0ng!LocalTest1;TrustServerCertificate=True;' \
+  loan-approval-api
+```
+
+The full app is then at `http://localhost:8080`. Tear down with
+`docker rm -f loan-app loan-sql && docker network rm loan-net`.
+
+The SA password above is a throwaway for local use only. Never put a real
+connection string in `appsettings.json` — it is tracked in git. Use
+`dotnet user-secrets` locally and App Service connection strings in Azure.
 
 ## Next steps / things to extend
 
