@@ -1,0 +1,89 @@
+# Azure DevOps pipeline for LoanApproval
+#
+# CI stage runs on every push/PR: restore, build, test.
+# CD stage runs only on main: publish and deploy to an Azure Web App.
+#
+# Before running: create an Azure Web App (Linux, .NET 8) and an
+# Azure DevOps service connection named "AzureServiceConnection" that
+# has Contributor access to it, then update webAppName below.
+
+trigger:
+  branches:
+    include:
+      - main
+
+pr:
+  branches:
+    include:
+      - main
+
+variables:
+  buildConfiguration: 'Release'
+  webAppName: 'loan-approval-api'          # <-- update to your App Service name
+  azureSubscription: 'AzureServiceConnection' # <-- update to your service connection name
+
+stages:
+  - stage: CI
+    displayName: 'Build and Test'
+    jobs:
+      - job: BuildAndTest
+        pool:
+          vmImage: 'ubuntu-latest'
+        steps:
+          - task: UseDotNet@2
+            displayName: 'Install .NET 8 SDK'
+            inputs:
+              version: '8.0.x'
+
+          - task: DotNetCoreCLI@2
+            displayName: 'Restore'
+            inputs:
+              command: 'restore'
+              projects: '**/*.csproj'
+
+          - task: DotNetCoreCLI@2
+            displayName: 'Build'
+            inputs:
+              command: 'build'
+              projects: '**/*.csproj'
+              arguments: '--configuration $(buildConfiguration) --no-restore'
+
+          - task: DotNetCoreCLI@2
+            displayName: 'Run tests'
+            inputs:
+              command: 'test'
+              projects: 'tests/**/*.csproj'
+              arguments: '--configuration $(buildConfiguration) --no-build --collect:"XPlat Code Coverage"'
+
+          - task: DotNetCoreCLI@2
+            displayName: 'Publish API'
+            inputs:
+              command: 'publish'
+              publishWebProjects: false
+              projects: 'src/LoanApproval.Api/LoanApproval.Api.csproj'
+              arguments: '--configuration $(buildConfiguration) --output $(Build.ArtifactStagingDirectory)/publish'
+              zipAfterPublish: true
+
+          - publish: '$(Build.ArtifactStagingDirectory)/publish'
+            artifact: 'drop'
+
+  - stage: CD
+    displayName: 'Deploy to Azure'
+    dependsOn: CI
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+    jobs:
+      - deployment: DeployWebApp
+        environment: 'production'
+        pool:
+          vmImage: 'ubuntu-latest'
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - task: AzureWebApp@1
+                  displayName: 'Deploy to Azure Web App'
+                  inputs:
+                    azureSubscription: '$(azureSubscription)'
+                    appType: 'webAppLinux'
+                    appName: '$(webAppName)'
+                    package: '$(Pipeline.Workspace)/drop/*.zip'

@@ -1,0 +1,52 @@
+using LoanApproval.Application.Interfaces;
+using LoanApproval.Application.Services;
+using LoanApproval.Infrastructure.Data;
+using LoanApproval.Infrastructure.Repositories;
+using LoanApproval.Infrastructure.Services;
+using Microsoft.EntityFrameworkCore;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// --- EF Core / persistence -------------------------------------------------
+builder.Services.AddDbContext<LoanDbContext>(options =>
+    options.UseSqlServer(builder.Configuration.GetConnectionString("LoanDb")));
+
+// --- Dependency injection, with lifetimes chosen deliberately --------------
+//
+// Scoped: created once per HTTP request. Used for anything that wraps the
+// DbContext (which is itself Scoped by AddDbContext), so a request sees a
+// single consistent unit of work.
+builder.Services.AddScoped<ILoanRepository, LoanRepository>();
+builder.Services.AddScoped<ILoanApplicationService, LoanApplicationService>();
+
+// Singleton: created once for the app's lifetime. Safe here because
+// EligibilityService is stateless - it holds no per-request or per-user
+// data, just constant thresholds, so there's no benefit to re-creating it.
+builder.Services.AddSingleton<IEligibilityService, EligibilityService>();
+
+// Transient: created every time it's requested. Used for the funding
+// gateway and audit logger since they're cheap, side-effect-only calls
+// with no shared state worth caching across a request.
+builder.Services.AddTransient<IFundingGateway, MockFundingGateway>();
+builder.Services.AddTransient<IAuditLogger, AuditLogger>();
+
+builder.Services.AddControllers();
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
+
+var app = builder.Build();
+
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
+
+app.UseHttpsRedirection();
+app.UseAuthorization();
+app.MapControllers();
+
+app.Run();
+
+// Exposed for WebApplicationFactory in integration tests.
+public partial class Program { }
