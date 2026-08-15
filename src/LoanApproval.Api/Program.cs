@@ -3,6 +3,7 @@ using LoanApproval.Application.Services;
 using LoanApproval.Infrastructure.Data;
 using LoanApproval.Infrastructure.Repositories;
 using LoanApproval.Infrastructure.Services;
+using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -18,6 +19,7 @@ builder.Services.AddDbContext<LoanDbContext>(options =>
 // single consistent unit of work.
 builder.Services.AddScoped<ILoanRepository, LoanRepository>();
 builder.Services.AddScoped<ILoanApplicationService, LoanApplicationService>();
+builder.Services.AddScoped<IApplicantService, ApplicantService>();
 
 // Singleton: created once for the app's lifetime. Safe here because
 // EligibilityService is stateless - it holds no per-request or per-user
@@ -30,7 +32,13 @@ builder.Services.AddSingleton<IEligibilityService, EligibilityService>();
 builder.Services.AddTransient<IFundingGateway, MockFundingGateway>();
 builder.Services.AddTransient<IAuditLogger, AuditLogger>();
 
-builder.Services.AddControllers();
+// Serialize DecisionType as "Approved" rather than 0. The numeric form forces
+// every client to hardcode the enum's ordinal, which then silently breaks if a
+// member is ever inserted into the middle of the enum.
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+        options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
+
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 

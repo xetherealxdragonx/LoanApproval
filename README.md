@@ -23,10 +23,24 @@ LoanApproval.Infrastructure  <- EF Core, repository, mock funding gateway (depen
 LoanApproval.Api             <- controllers, DI composition root (depends on all of the above)
 ```
 
+A React + TypeScript front end lives separately in `web/`, consuming the API over
+HTTP. It is not part of the .NET solution and builds independently.
+
 `Program.cs` in `LoanApproval.Api` is the composition root — it's the only place
 where interfaces are wired to concrete implementations, and it's where the DI
 lifetimes (Scoped / Singleton / Transient) are chosen deliberately rather than
 defaulted. See the comments there for the reasoning behind each choice.
+
+## Endpoints
+
+| Method | Route                              | Purpose                                          |
+|--------|------------------------------------|--------------------------------------------------|
+| `POST` | `/api/loanapplications`            | Submit an application; evaluate, persist, fund    |
+| `GET`  | `/api/applicants`                  | List members with a count of their applications   |
+| `GET`  | `/api/applicants/{memberNumber}`   | One member with their applications and decisions  |
+
+`DecisionType` is serialized as a string (`"Approved"`), not its ordinal, so
+clients never have to depend on the enum's declaration order.
 
 ## Request flow
 
@@ -74,6 +88,28 @@ The seeded members are each chosen to trip exactly one branch of the rules engin
 
 Requesting over the $500 cap, or a non-positive amount, is denied for any member;
 an unknown member number returns 404.
+
+## Front end
+
+A React 19 + TypeScript app in `web/`, built with Vite. It lists the members held
+in the database and drills into any one of them to show their submitted
+applications, each with its decision, reasoning, evaluation time, and funding status.
+
+```bash
+cd web
+npm install
+npm run dev      # http://localhost:5173
+```
+
+Run the API first — the Vite dev server proxies `/api` to
+`https://localhost:54744` (see `web/vite.config.ts`). Going through the proxy
+keeps every browser request same-origin, which is why the API needs **no CORS
+policy** for local development. The proxy sets `secure: false` because the
+ASP.NET Core developer certificate is self-signed; that is a local-development
+setting only.
+
+If you later host the front end on its own origin, the proxy no longer applies
+and the API will need a CORS policy at that point.
 
 To reset the demo to a clean slate:
 

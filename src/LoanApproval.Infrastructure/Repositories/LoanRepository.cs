@@ -51,6 +51,26 @@ public class LoanRepository(LoanDbContext context) : ILoanRepository
             .FirstOrDefaultAsync(l => l.Id == id);
     }
 
+    public async Task<IReadOnlyList<Applicant>> GetApplicantsAsync()
+    {
+        // AsNoTracking: these are read-only projections for the UI, so there is
+        // no reason to pay for the change tracker's identity map and snapshots.
+        return await context.Applicants
+            .AsNoTracking()
+            .Include(a => a.LoanApplications)
+            .OrderBy(a => a.MemberNumber)
+            .ToListAsync();
+    }
+
+    public async Task<Applicant?> GetApplicantDetailAsync(string memberNumber)
+    {
+        return await context.Applicants
+            .AsNoTracking()
+            .Include(a => a.LoanApplications)
+                .ThenInclude(l => l.Decision)
+            .FirstOrDefaultAsync(a => a.MemberNumber == memberNumber);
+    }
+
     public async Task<(int TotalApplications, int Approved, double AvgEvaluationMs)> GetApplicantTrendAsync(int applicantId)
     {
         var query = context.LoanApplications
