@@ -44,14 +44,42 @@ defaulted. See the comments there for the reasoning behind each choice.
 dotnet restore
 dotnet build
 
-# Apply EF Core migrations (requires a local SQL Server / LocalDB instance)
-dotnet ef database update --project src/LoanApproval.Infrastructure --startup-project src/LoanApproval.Api
-
-# Run the API
+# Run the API (requires a local SQL Server / LocalDB instance)
 dotnet run --project src/LoanApproval.Api
 ```
 
 Swagger UI will be available at `https://localhost:<port>/swagger` in development.
+
+### Database and demo data
+
+In the `Development` environment the API applies pending migrations and seeds five
+demo applicants on startup (see `DbSeeder`), so there is no manual database step.
+The seed is idempotent — it is skipped if any applicant already exists.
+
+To apply migrations without running the API:
+
+```bash
+dotnet ef database update --project src/LoanApproval.Infrastructure --startup-project src/LoanApproval.Api
+```
+
+The seeded members are each chosen to trip exactly one branch of the rules engine:
+
+| Member   | Profile                          | Outcome for a $400 request |
+|----------|----------------------------------|----------------------------|
+| `M-1001` | $3,200/mo, 0 open loans, clean   | Approved (and funded)      |
+| `M-1002` | Recent delinquency flag          | ManualReviewRequired       |
+| `M-1003` | 2 open loans (at the limit)      | Denied                     |
+| `M-1004` | $650/mo income                   | ManualReviewRequired       |
+| `M-1005` | $800/mo — exactly on the line    | Approved (and funded)      |
+
+Requesting over the $500 cap, or a non-positive amount, is denied for any member;
+an unknown member number returns 404.
+
+To reset the demo to a clean slate:
+
+```bash
+dotnet ef database drop --force --project src/LoanApproval.Infrastructure --startup-project src/LoanApproval.Api
+```
 
 ## Running tests
 

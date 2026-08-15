@@ -40,6 +40,14 @@ if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
+
+    // Development only: apply migrations and seed demo applicants so the API is
+    // immediately demoable against an empty database. A scope is required here
+    // because LoanDbContext is Scoped and app.Services is the root provider.
+    using var scope = app.Services.CreateScope();
+    await DbSeeder.SeedAsync(
+        scope.ServiceProvider.GetRequiredService<LoanDbContext>(),
+        scope.ServiceProvider.GetRequiredService<ILogger<Program>>());
 }
 
 app.UseHttpsRedirection();
