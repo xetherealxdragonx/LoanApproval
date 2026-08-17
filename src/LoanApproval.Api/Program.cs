@@ -9,8 +9,31 @@ using Microsoft.EntityFrameworkCore;
 var builder = WebApplication.CreateBuilder(args);
 
 // --- EF Core / persistence -------------------------------------------------
+//
+// EnableRetryOnFailure installs SqlServerRetryingExecutionStrategy, which retries
+// the transient SQL Server error numbers with exponential backoff. This matters
+// far more against Azure SQL than LocalDB: throttling, and the brief connection
+// drop during a failover, both present as transient errors that succeed on a
+// second attempt. Without it, an ordinary request-time query surfaces them
+// straight to the caller as a 500.
+//
+// Note this covers per-command faults during normal request handling. The startup
+// path has its own coarser retry in DbSeeder, which wraps the whole
+// migrate-and-seed sequence; the two compose, since a RetryLimitExceededException
+// still carries the underlying SqlException as an inner exception.
+//
+// Caveat for later: a retrying strategy refuses user-initiated transactions
+// (context.Database.BeginTransaction) unless the whole block is wrapped in
+// strategy.ExecuteAsync. Nothing here does that today - the repository relies on
+// SaveChangesAsync, which manages its own transaction - but it is the thing that
+// breaks first if explicit transactions are added.
 builder.Services.AddDbContext<LoanDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("LoanDb")));
+    options.UseSqlServer(
+        builder.Configuration.GetConnectionString("LoanDb"),
+        sqlServer => sqlServer.EnableRetryOnFailure(
+            maxRetryCount: 5,
+            maxRetryDelay: TimeSpan.FromSeconds(10),
+            errorNumbersToAdd: null)));
 
 // --- Dependency injection, with lifetimes chosen deliberately --------------
 //

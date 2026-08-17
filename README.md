@@ -89,6 +89,24 @@ is a longer and better supervised retry than anything done in-process. Starting 
 anyway would leave a process that answers requests with errors while still looking
 healthy to a platform health probe.
 
+That covers startup. Request-time queries are covered separately by
+`EnableRetryOnFailure` on the `AddDbContext` registration in `Program.cs`, which
+installs EF Core's `SqlServerRetryingExecutionStrategy` — five retries with
+exponential backoff, capped at 10 seconds. Azure SQL throttles under load and
+drops connections briefly during failover; both present as transient errors that
+succeed on a second attempt, and without the strategy they would reach the caller
+as a 500.
+
+The two layers compose rather than conflict: a `RetryLimitExceededException` from
+the execution strategy still carries the underlying `SqlException` as an inner
+exception, which is what `DbSeeder`'s own check walks the chain looking for.
+
+One constraint to know before extending the data layer: a retrying execution
+strategy refuses user-initiated transactions. Nothing does that today —
+`LoanRepository` relies on `SaveChangesAsync`, which manages its own transaction —
+but if an explicit `BeginTransaction` is ever added, the whole block has to be
+wrapped in `strategy.ExecuteAsync`.
+
 The seeded members are each chosen to trip exactly one branch of the rules engine:
 
 | Member   | Profile                          | Outcome for a $400 request |
@@ -193,6 +211,67 @@ Two equivalent pipeline options are included:
 
 Both require an Azure Web App (Linux, .NET 8) to already exist; update the
 `webAppName` / `app-name` value before running.
+
+## Connecting to Azure SQL with a managed identity
+
+The deployed app authenticates to Azure SQL with its managed identity, so no
+password exists anywhere — not in `appsettings.json`, not in pipeline variables,
+not in a key vault. `Azure.Identity` and `Microsoft.Data.SqlClient` both arrive
+transitively through EF Core, so this needs no extra packages and no C# changes:
+it is a connection string plus a grant.
+
+### Connection string
+
+```
+Server=tcp:<sql-server>.database.windows.net,1433;Initial Catalog=<database>;Authentication=Active Directory Default;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;
+```
+
+`Active Directory Default` resolves through the `DefaultAzureCredential` chain:
+the managed identity when running in Azure, and the developer's `az login`
+session when running locally. One string works in both places.
+`Active Directory Managed Identity` is the narrower alternative — add
+`User Id=<client-id>` for a user-assigned identity rather than a system-assigned one.
+
+Set it on the Web App as a connection string named `LoanDb`:
+
+```bash
+az webapp config connection-string set --name <app-name> --resource-group <rg> \
+  --connection-string-type SQLAzure \
+  --settings LoanDb="Server=tcp:<sql-server>.database.windows.net,1433;Initial Catalog=<database>;Authentication=Active Directory Default;Encrypt=True;TrustServerCertificate=False;"
+```
+
+App Service exposes that as `SQLAZURECONNSTR_LoanDb`, which the configuration
+provider maps back to `ConnectionStrings:LoanDb` — the key `Program.cs` already
+reads. An app setting named `ConnectionStrings__LoanDb` is equivalent, and is the
+form to use when running the container directly.
+
+### Granting the identity
+
+Assign the identity, then create a contained user for it **in the application
+database, not `master`**, connected as the server's Entra admin:
+
+```sql
+CREATE USER [<app-name>] FROM EXTERNAL PROVIDER;
+ALTER ROLE db_datareader ADD MEMBER [<app-name>];
+ALTER ROLE db_datawriter ADD MEMBER [<app-name>];
+ALTER ROLE db_ddladmin  ADD MEMBER [<app-name>];
+```
+
+For a system-assigned identity the principal name is the Web App's own name.
+
+`db_ddladmin` is required **because this app migrates on startup** — see *Startup
+resilience* above. Migrations issue DDL, so reader and writer alone are not
+enough and the app would exhaust its startup retries and exit. To avoid granting
+DDL rights to the runtime identity, move migrations into the pipeline as a
+deployment step; the app identity then only needs reader and writer.
+
+Note that a permissions failure surfaces as a `SqlException` just as a
+connectivity failure does, so a missing grant takes the full ~31s of startup
+retries before the process exits rather than failing immediately.
+
+Finally, the Web App has to be able to reach the server: either enable "Allow
+Azure services and resources to access this server", or use VNet integration with
+a private endpoint.
 
 ## Containerizing
 
